@@ -1,0 +1,1 @@
+catalog -Dconfig.resource=local3.conf
