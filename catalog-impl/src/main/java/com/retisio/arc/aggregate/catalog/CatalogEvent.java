@@ -17,7 +17,7 @@ public abstract class CatalogEvent implements JsonSerializable {
     @Value
     @JsonDeserialize
     @Slf4j
-    final static class CatalogCreated extends CatalogEvent {
+    public final static class CatalogCreated extends CatalogEvent {
 
         String catalogName;
         Boolean active;

@@ -9,6 +9,7 @@ import com.retisio.arc.aggregate.catalog.Catalog;
 import com.retisio.arc.aggregate.catalog.CatalogAggregate;
 import com.retisio.arc.aggregate.catalog.CatalogCommand;
 import com.retisio.arc.execution.ServiceExecutionContext;
+import com.retisio.arc.projection.catalog.CatalogDbProjection;
 import com.retisio.arc.request.catalog.CreateCatalogRequest;
 import com.retisio.arc.response.catalog.GetCatalogResponse;
 import lombok.extern.slf4j.Slf4j;
@@ -31,8 +32,9 @@ public class CatalogServiceImpl implements CatalogService {
         akka.actor.typed.ActorSystem<Void> typedActorSystem = Adapter.toTyped(classicActorSystem);
         this.clusterSharding = ClusterSharding.get(typedActorSystem);
 
-        CatalogAggregate.init(clusterSharding,3,35);
-        log.info("akka actors registration is processed");
+        CatalogAggregate.init(typedActorSystem, 3,35);
+
+        CatalogDbProjection.init(typedActorSystem);
     }
 
     private static final Duration askTimeout = Duration.ofSeconds(10);

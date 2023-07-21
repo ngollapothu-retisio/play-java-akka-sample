@@ -1,37 +1,26 @@
 # play-java-akka-sample
-play-java-akka-sample
 
 Steps to run application
 
 Step 1: clone the code
 ```
 git clone https://github.com/ngollapothu-retisio/play-java-akka-sample.git
-git checkout 0.2-akka-persistence
+git checkout 0.3-akka-db-projection
 git pull
 ```
+Step 2: execute DDL scripts on respective databases at bash command prompt
 
-Step 2: create catalog_write_side, catalog_read_side databases
-```
-create database catalog_write_side;
-create database catalog_read_side;
-```
 user: postgres, pwd: postgres
-
-Step 3: execute DDL scripts on respective databases at bash command prompt
 ```
 $ ./migrate-read-db.sh postgres postgres localhost:5432
-$ ./migrate-write-db.sh postgres postgres localhost:5432
 ```
 
-Step 4: run the service in local
+Step 3: run the service in local
 ```
 sbt -Dconfig.resource=application-local.conf run
 ```
 
-GET Ping the service
-```
-curl --location --request GET 'http://localhost:9000'
-```
+Step 4: 
 
 POST catalog creation service
 ```
@@ -44,297 +33,175 @@ curl --location --request POST 'http://localhost:9000/catalogs' \
 }'
 ```
 
+Step 5: 
+db: catalog_read_side
+```
+select * from catalog;
+
+select * from akka_projection_timestamp_offset_store;
+```
+
 About the code
 
-Before jumping to the Akka persistence code changes, please check the below link
+Before jumping to the Akka DB Projection code changes, please check the below links
+
 https://github.com/ngollapothu-retisio/play-java-akka-sample/blob/0.1-akka-management-enabled/README.md
+
+https://github.com/ngollapothu-retisio/play-java-akka-sample/blob/0.2-akka-persistence/README.md
 
 New files are added in this branch
 ```
-1. Catalog
-   CatalogAggregate
-   CatalogCommand
-   CatalogEvent
-   CatalogState
-2. JsonSerializable
-3. r2dbc-write-side.conf
-   serialization.conf
-4. sql/catalog_write_side/V1__Intial_r2dbc_write_1.sql
-   sql/catalog_read_side/V1__Intial_r2dbc_read_1.sql
+1. CatalogDbProjection.java
+   CatalogDbProjectionHandler.java
+2. StatementWrapper.java
+3. r2dbc-read-side.conf
+4. sql/catalog_read_side/V2__catalog_readside_1.sql
 ```
 
 **Details:**
 
-1. Akka persitence DDL scripts are available in sql/catalog_write_side/V1__Intial_r2dbc_write_1.sql. These tables are different from legacy lagom persistence DDL structure.
-```
-$ ./migrate-write-db.sh postgres postgres localhost:5432
-```
-2. Akka projection DDL scripts are available in sql/catalog_read_side/V1__Intial_r2dbc_read_1.sql. These tables are different from legacy lagom read side DDL structure.
+1. Akka projection DDL scripts are available in sql/catalog_read_side/V1__Intial_r2dbc_read_1.sql. These tables are different from legacy lagom read side DDL structure.
 ```
 $ ./migrate-read-db.sh postgres postgres localhost:5432
 ```
-3. similar legacy lagom persistence, Akka persistence also does the actor operations through Aggregate class. Command, Event, State classes are considered as messages 
-and flowing over the networks and Event, State messages are persisted in event_journal, event_snapshot tables in write side database catalog_write_database.
+2. sql/catalog_read_side/V2__catalog_readside_1.sql has Catalog DB projection DDL, Event details will be stored in CATALOG table in read side database.
+```
+DROP TABLE IF EXISTS CATALOG;
+
+CREATE TABLE IF NOT EXISTS CATALOG
+(
+    CATALOG_ID VARCHAR(255) NOT NULL,
+    CATALOG_NAME VARCHAR(500) NOT NULL,
+    IS_ACTIVE BOOLEAN DEFAULT FALSE,
+    IS_DELETED BOOLEAN DEFAULT FALSE,
+    CREATED_TMST TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    LAST_MODIFIED_TMST TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY(CATALOG_ID)
+);
+```
+3. In CatalogDbProjection, 4 Sharded Daemon threads are created and will be executed on multiple pods.
+For example, micro-service is running on 2 pods then 2 threads will be running on each pod.
+And If micro-service is running on 3 pods then 2 threads are on one pod, 1 thread on one pad,and 1 thread on another pod.
+And If micro-service is running on 4 pods then 1 thread on each pod.  
 
 go through the classes for best practices
 ```
-   Catalog
-   CatalogAggregate
-   CatalogCommand
-   CatalogEvent
-   CatalogState
+   CatalogDbProjection.java
+   CatalogDbProjectionHandler.java
 ```
-3. Catalog, CatalogCommand, CatalogEvent, and CatalogState classes are marked with JsonSerializable interface, and annotated with @JsonDeserialize, @JsonCreator
+file: CatalogDbProjection.java
+```
+    public static void init(ActorSystem system) {
+        // Split the slices into 4 ranges
+        int numberOfSliceRanges = 4;
+        List<Pair<Integer, Integer>> sliceRanges =
+                EventSourcedProvider.sliceRanges(
+                        system, R2dbcReadJournal.Identifier(), numberOfSliceRanges);
 
-file: JsonSerializable.java
-```
-package com.retisio.arc.serializer;
-
-public interface JsonSerializable {}
-```
-
-file: Catalog.java
-```
-@Value
-@JsonInclude(JsonInclude.Include.NON_NULL)
-@JsonDeserialize
-public class Catalog implements JsonSerializable {
-    private String catalogId;
-    private String catalogName;
-    private Boolean active;
-    private Boolean deleted;
-}
-```
-file: CatalogCommand.java
-```
-public interface CatalogCommand extends JsonSerializable {
-
-    @Value
-    @JsonDeserialize
-    class CreateCatalog implements CatalogCommand {
-        String catalogId;
-        String catalogName;
-        Boolean active;
-        ActorRef<Done> replyTo;
-
-        @JsonCreator
-        public CreateCatalog(String catalogId, String catalogName, Boolean active, ActorRef<Done> replyTo) {
-            this.catalogId = catalogId;
-            this.catalogName = catalogName;
-            this.active = active;
-            this.replyTo = replyTo;
-        }
+        ShardedDaemonProcess.get(system)
+                .init(
+                        ProjectionBehavior.Command.class,
+                        "CatalogDbProjection",
+                        sliceRanges.size(),
+                        i -> ProjectionBehavior.create(createProjection(system, sliceRanges.get(i))),
+                        ProjectionBehavior.stopMessage());
     }
-
-    @Value
-    @JsonDeserialize
-    class GetCatalog implements CatalogCommand {
-        ActorRef<Optional<Catalog>> replyTo;
-
-        @JsonCreator
-        public GetCatalog(ActorRef<Optional<Catalog>> replyTo) {
-            this.replyTo = replyTo;
-        }
-    }
-}
 ```
-file: CatalogEvent.java
+ProjectionId should be unique for each slice range, "CatalogDbProjection" is projection name.
+file: CatalogDbProjection.java
 ```
-public abstract class CatalogEvent implements JsonSerializable {
-
-    final public String catalogId;
-
-    public CatalogEvent(String catalogId){
-        this.catalogId = catalogId;
-    }
-
-    @Value
-    @JsonDeserialize
-    final static class CatalogCreated extends CatalogEvent {
-
-        String catalogName;
-        Boolean active;
-
-        @JsonCreator
-        private CatalogCreated(String catalogId, String catalogName, Boolean active) {
-            super(catalogId);
-            this.catalogName = catalogName;
-            this.active = active;
-        }
-
-        static CatalogCreated getInstance(CatalogCommand.CreateCatalog cmd) {
-            return new CatalogCreated(
-                    cmd.getCatalogId(),
-                    cmd.getCatalogName(),
-                    cmd.getActive()
-            );
-        }
-    }
-
-}
+ProjectionId projectionId =
+                ProjectionId.of("CatalogDbProjection", "catalog-db-" + minSlice + "-" + maxSlice);
 ```
-file: CatalogState.java
+
+4. CatalogDbProjectionHandler receives event details in process method along with R2dbcSession object. We can use R2dbcSession to persist the event details in CATALOG table.
 ```
-@JsonDeserialize
-public class CatalogState implements JsonSerializable {
-
-    public static final CatalogState EMPTY = new CatalogState(Optional.empty());
-
-    public final Optional<Catalog> catalog;
-
-    @JsonCreator
-    public CatalogState(Optional<Catalog> catalog) {
-        this.catalog = catalog;
-    }
-
-    public CatalogState createCatalog(CatalogEvent.CatalogCreated event){
-        return new CatalogState(
-                Optional.of(
-                        new Catalog(
-                                event.catalogId,
-                                event.getCatalogName(),
-                                event.getActive(),
-                                false
-                        )
-                )
-        );
-    }
-
-}
-```
-file: CatalogAggregate.java
-```
-package com.retisio.arc.aggregate.catalog;
-
-import akka.Done;
-import akka.actor.typed.Behavior;
-import akka.actor.typed.javadsl.Behaviors;
-import akka.cluster.sharding.typed.javadsl.ClusterSharding;
-import akka.cluster.sharding.typed.javadsl.Entity;
-import akka.cluster.sharding.typed.javadsl.EntityTypeKey;
-import akka.persistence.typed.PersistenceId;
-import akka.persistence.typed.javadsl.*;
-
-public class CatalogAggregate extends EventSourcedBehaviorWithEnforcedReplies<CatalogCommand, CatalogEvent, CatalogState> {
-
-    //----------------------------
-    public static EntityTypeKey<CatalogCommand> ENTITY_TYPE_KEY = EntityTypeKey.create(CatalogCommand.class, "CatalogAggregate");
-
-    static Integer numberOfEvents;
-    static Integer keepNSnapshots;
-
-    public static void init(ClusterSharding clusterSharding, Integer numberOfEvents, Integer keepNSnapshots) {
-        clusterSharding.init(
-                Entity.of(
-                        ENTITY_TYPE_KEY,
-                        entityContext -> {
-                            return CatalogAggregate.create(entityContext.getEntityId(), numberOfEvents, keepNSnapshots);
-                        }));
-    }
-
-    public static Behavior<CatalogCommand> create(String entityId, Integer numberOfEvents, Integer keepNSnapshots) {
-        return Behaviors.setup(
-                ctx -> EventSourcedBehavior.start(new CatalogAggregate(entityId, numberOfEvents, keepNSnapshots), ctx));
-    }
-
-    private CatalogAggregate(String entityId, Integer numberOfEvents, Integer keepNSnapshots) {
-        super(
-                PersistenceId.of(ENTITY_TYPE_KEY.name(), entityId)
-        );
-        this.numberOfEvents = numberOfEvents;
-        this.keepNSnapshots = keepNSnapshots;
-    }
-    //----------------------------------
-    @Override
-    public RetentionCriteria retentionCriteria() {
-        return RetentionCriteria.snapshotEvery(numberOfEvents,
-                keepNSnapshots).withDeleteEventsOnSnapshot();
-    }
-    //---------------------------------
+@Slf4j
+public class CatalogDbProjectionHandler extends R2dbcHandler<EventEnvelope<CatalogEvent>> {
 
     @Override
-    public CatalogState emptyState() {
-        return CatalogState.EMPTY;
+    public CompletionStage<Done> process(R2dbcSession session, EventEnvelope<CatalogEvent> envelope) {
+        CatalogEvent event = envelope.event();
+        return processReadSide(session, event);
     }
 
-    @Override
-    public CommandHandlerWithReply<CatalogCommand, CatalogEvent, CatalogState> commandHandler() {
-        return newCommandHandlerWithReplyBuilder()
-                .forAnyState()
-                .onCommand(CatalogCommand.GetCatalog.class, (state, cmd) -> Effect()
-                        .none()
-                        .thenReply(cmd.getReplyTo(), __ -> state.catalog))
-                .onCommand(CatalogCommand.CreateCatalog.class, (state, cmd) -> Effect()
-                        .persist(CatalogEvent.CatalogCreated.getInstance(cmd))
-                        .thenReply(cmd.getReplyTo(), __ -> Done.getInstance()))
-                .build();
+    private CompletionStage<Done> processReadSide(R2dbcSession session, CatalogEvent event){
+        if(event instanceof CatalogEvent.CatalogCreated) {
+            return saveCatalog(session, (CatalogEvent.CatalogCreated)event);
+        }else {
+            return CompletableFuture.completedFuture(Done.getInstance());
+        }
+    }
+    private static final String SAVE_CATALOG_QUERY = "INSERT INTO CATALOG(" +
+		"CATALOG_ID, " +
+		"CATALOG_NAME, " +
+		"IS_ACTIVE, " +
+		"IS_DELETED, " +
+        "LAST_MODIFIED_TMST) " +
+        "VALUES ($1, $2, $3, $4, $5) " +
+        "on conflict (CATALOG_ID) DO UPDATE set " +
+		"CATALOG_ID=excluded.CATALOG_ID, " +
+		"CATALOG_NAME=excluded.CATALOG_NAME, " +
+		"IS_ACTIVE=excluded.IS_ACTIVE, " +
+		"IS_DELETED=excluded.IS_DELETED, " +
+        "LAST_MODIFIED_TMST=now()";
+    private CompletionStage<Done> saveCatalog(R2dbcSession session, CatalogEvent.CatalogCreated event) {
+    	log.info("saveCatalog catalogId::{}", event.catalogId);
+    	AtomicInteger index = new AtomicInteger(-1);
+        StatementWrapper statementWrapper = new StatementWrapper(session.createStatement(SAVE_CATALOG_QUERY));
+        statementWrapper.bind(index.incrementAndGet(), event.catalogId, String.class);
+        statementWrapper.bind(index.incrementAndGet(), event.getCatalogName(), String.class);
+        statementWrapper.bind(index.incrementAndGet(), event.getActive(), Boolean.class);
+        statementWrapper.bind(index.incrementAndGet(), false, Boolean.class);
+        statementWrapper.bind(index.incrementAndGet(), Timestamp.valueOf(LocalDateTime.now()), Timestamp.class);
+        return session.updateOne(statementWrapper.getStatement())
+                .thenApply(rowsUpdated -> Done.getInstance());
     }
 
-    @Override
-    public EventHandler<CatalogState, CatalogEvent> eventHandler() {
-        return newEventHandlerBuilder().
-                forAnyState()
-                .onEvent(CatalogEvent.CatalogCreated.class,
-                        (state, evt) -> state.createCatalog(evt))
-                .build();
-    }
-    //-------------------------------
 }
-
+``` 
+StatementWrapper.java is just a helper class to bind the params of SQL query with statement, It is simplifying the code. 
 ```
-4. register the CatalogAggregate
-file: CatalogServiceImpl.java 
+public class StatementWrapper {
+    private Statement stmt;
+    public StatementWrapper(Statement stmt){
+        this.stmt = stmt;
+    }
+    public StatementWrapper bind(int index, Object object, Class<?> type){
+        return Optional.ofNullable(object)
+                .map(o -> {
+                    this.stmt.bind(index, object);
+                    return this;
+                })
+                .orElseGet(()->{
+                    this.stmt.bindNull(index, type);
+                    return this;
+                });
+    }
+    public Statement getStatement(){
+        return this.stmt;
+    }
+}
+//$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20
+```
+
+5. To enabled Akka projection include this file in application.conf
+```
+include "r2dbc-read-side"
+```
+
+6. register the CatalogDbProjection 
+
+file: CatalogServiceImpl.java
 ```
     @Inject
     public CatalogServiceImpl(ActorSystem classicActorSystem){
         akka.actor.typed.ActorSystem<Void> typedActorSystem = Adapter.toTyped(classicActorSystem);
         this.clusterSharding = ClusterSharding.get(typedActorSystem);
 
-        CatalogAggregate.init(clusterSharding,3,35);
-    }
-```
-5. we can issue commands using actor reference when APIs are invoked and serve actor state
-file: CatalogServiceImpl.java
-```
-    private static final Duration askTimeout = Duration.ofSeconds(10);
+        CatalogAggregate.init(typedActorSystem, 3,35); //akka-persistence
 
-    public EntityRef<CatalogCommand> ref(String entityId) {
-        return clusterSharding.entityRefFor(CatalogAggregate.ENTITY_TYPE_KEY, entityId);
+        CatalogDbProjection.init(typedActorSystem); //akka-projection
     }
 
-    public CompletionStage<Optional<Catalog>> getCatalog(EntityRef<CatalogCommand> ref) {
-        return ref.ask(CatalogCommand.GetCatalog::new, askTimeout);
-    }
-
-    public CompletionStage<Optional<Catalog>> createCatalog(CreateCatalogRequest request, EntityRef<CatalogCommand> ref) {
-        return ref.<Done>ask(replyTo -> new CatalogCommand.CreateCatalog(
-                            request.getCatalogId(),
-                            request.getCatalogName(),
-                            request.getActive(),
-                            replyTo
-                    ), askTimeout)
-                .thenCompose(done -> getCatalog(ref));
-    }
-
-    @Override
-    public CompletionStage<GetCatalogResponse> createCatalog(CreateCatalogRequest request) {
-        return createCatalog(request, ref(request.getCatalogId()))
-                .thenApply(optCatalog -> {
-                    if(optCatalog.isPresent()){
-                        Catalog catalog = optCatalog.get();
-                        return GetCatalogResponse.builder()
-                                .catalogId(catalog.getCatalogId())
-                                .catalogName(catalog.getCatalogName())
-                                .active(catalog.getActive())
-                                .deleted(catalog.getDeleted())
-                                .build();
-                    }
-                    return GetCatalogResponse.builder().build();
-                });
-    }
-```
-6. To enabled Akka persistence include these files in application.conf
-```
-include "r2dbc-write-side"
-include "serialization"
 ```

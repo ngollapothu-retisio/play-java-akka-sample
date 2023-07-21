@@ -1,6 +1,7 @@
 package com.retisio.arc.aggregate.catalog;
 
 import akka.Done;
+import akka.actor.typed.ActorSystem;
 import akka.actor.typed.Behavior;
 import akka.actor.typed.javadsl.Behaviors;
 import akka.cluster.sharding.typed.javadsl.ClusterSharding;
@@ -19,13 +20,16 @@ public class CatalogAggregate extends EventSourcedBehaviorWithEnforcedReplies<Ca
     static Integer numberOfEvents;
     static Integer keepNSnapshots;
 
-    public static void init(ClusterSharding clusterSharding, Integer numberOfEvents, Integer keepNSnapshots) {
-        clusterSharding.init(
-                Entity.of(
-                        ENTITY_TYPE_KEY,
-                        entityContext -> {
-                            return CatalogAggregate.create(entityContext.getEntityId(), numberOfEvents, keepNSnapshots);
+    public static void init(ActorSystem<Void> typedActorSystem, Integer numberOfEvents, Integer keepNSnapshots) {
+        ClusterSharding
+                .get(typedActorSystem)
+                .init(
+                    Entity.of(
+                            ENTITY_TYPE_KEY,
+                            entityContext -> {
+                                return CatalogAggregate.create(entityContext.getEntityId(), numberOfEvents, keepNSnapshots);
                         }));
+
         log.info("CatalogAggregate init is completed ....");
     }
 
