@@ -8,7 +8,9 @@ import akka.cluster.sharding.typed.javadsl.Entity;
 import akka.cluster.sharding.typed.javadsl.EntityTypeKey;
 import akka.persistence.typed.PersistenceId;
 import akka.persistence.typed.javadsl.*;
+import lombok.extern.slf4j.Slf4j;
 
+@Slf4j
 public class CatalogAggregate extends EventSourcedBehaviorWithEnforcedReplies<CatalogCommand, CatalogEvent, CatalogState> {
 
     //----------------------------
@@ -24,6 +26,7 @@ public class CatalogAggregate extends EventSourcedBehaviorWithEnforcedReplies<Ca
                         entityContext -> {
                             return CatalogAggregate.create(entityContext.getEntityId(), numberOfEvents, keepNSnapshots);
                         }));
+        log.info("CatalogAggregate init is completed ....");
     }
 
     public static Behavior<CatalogCommand> create(String entityId, Integer numberOfEvents, Integer keepNSnapshots) {

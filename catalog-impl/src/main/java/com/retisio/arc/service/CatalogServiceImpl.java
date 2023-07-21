@@ -11,12 +11,14 @@ import com.retisio.arc.aggregate.catalog.CatalogCommand;
 import com.retisio.arc.execution.ServiceExecutionContext;
 import com.retisio.arc.request.catalog.CreateCatalogRequest;
 import com.retisio.arc.response.catalog.GetCatalogResponse;
+import lombok.extern.slf4j.Slf4j;
 
 import javax.inject.Inject;
 import java.time.Duration;
 import java.util.Optional;
 import java.util.concurrent.CompletionStage;
 
+@Slf4j
 public class CatalogServiceImpl implements CatalogService {
 
     private final ClusterSharding clusterSharding;
@@ -30,6 +32,7 @@ public class CatalogServiceImpl implements CatalogService {
         this.clusterSharding = ClusterSharding.get(typedActorSystem);
 
         CatalogAggregate.init(clusterSharding,3,35);
+        log.info("akka actors registration is processed");
     }
 
     private static final Duration askTimeout = Duration.ofSeconds(10);

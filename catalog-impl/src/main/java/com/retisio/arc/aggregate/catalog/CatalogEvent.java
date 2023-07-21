@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.retisio.arc.serializer.JsonSerializable;
 import lombok.Value;
+import lombok.extern.slf4j.Slf4j;
 
 public abstract class CatalogEvent implements JsonSerializable {
 
@@ -15,6 +16,7 @@ public abstract class CatalogEvent implements JsonSerializable {
 
     @Value
     @JsonDeserialize
+    @Slf4j
     final static class CatalogCreated extends CatalogEvent {
 
         String catalogName;
@@ -25,6 +27,7 @@ public abstract class CatalogEvent implements JsonSerializable {
             super(catalogId);
             this.catalogName = catalogName;
             this.active = active;
+            log.info("CatalogCreated ....");
         }
 
         static CatalogCreated getInstance(CatalogCommand.CreateCatalog cmd) {
