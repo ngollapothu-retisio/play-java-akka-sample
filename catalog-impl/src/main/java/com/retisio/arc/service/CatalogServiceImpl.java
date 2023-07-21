@@ -10,8 +10,10 @@ import com.retisio.arc.aggregate.catalog.CatalogAggregate;
 import com.retisio.arc.aggregate.catalog.CatalogCommand;
 import com.retisio.arc.execution.ServiceExecutionContext;
 import com.retisio.arc.projection.catalog.CatalogDbProjection;
+import com.retisio.arc.projection.catalog.CatalogMessageProjection;
 import com.retisio.arc.request.catalog.CreateCatalogRequest;
 import com.retisio.arc.response.catalog.GetCatalogResponse;
+import com.retisio.arc.util.KafkaUtil;
 import lombok.extern.slf4j.Slf4j;
 
 import javax.inject.Inject;
@@ -28,13 +30,14 @@ public class CatalogServiceImpl implements CatalogService {
     private ServiceExecutionContext serviceExecutionContext;
 
     @Inject
-    public CatalogServiceImpl(ActorSystem classicActorSystem){
+    public CatalogServiceImpl(ActorSystem classicActorSystem, KafkaUtil kafkaUtil){
         akka.actor.typed.ActorSystem<Void> typedActorSystem = Adapter.toTyped(classicActorSystem);
         this.clusterSharding = ClusterSharding.get(typedActorSystem);
 
         CatalogAggregate.init(typedActorSystem, 3,35);
 
         CatalogDbProjection.init(typedActorSystem);
+        CatalogMessageProjection.init(typedActorSystem, kafkaUtil);
     }
 
     private static final Duration askTimeout = Duration.ofSeconds(10);
