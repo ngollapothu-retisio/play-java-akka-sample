@@ -18,7 +18,7 @@ lazy val `catalog-api` = (project in file("catalog-api"))
 
 lazy val `catalog-impl` = (project in file("catalog-impl"))
   .enablePlugins(JavaAgent)
-  .settings(common, Dependencies.kamonSettings)
+  .settings(common)
   .settings(
     libraryDependencies ++= Seq(
       guice

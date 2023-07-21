@@ -6,13 +6,16 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.retisio.arc.serializer.JsonSerializable;
 import lombok.Value;
+import lombok.extern.slf4j.Slf4j;
 
 import java.util.Optional;
+
 
 public interface CatalogCommand extends JsonSerializable {
 
     @Value
     @JsonDeserialize
+    @Slf4j
     class CreateCatalog implements CatalogCommand {
         String catalogId;
         String catalogName;
@@ -25,17 +28,20 @@ public interface CatalogCommand extends JsonSerializable {
             this.catalogName = catalogName;
             this.active = active;
             this.replyTo = replyTo;
+            log.info("CreateCatalog ....");
         }
     }
 
     @Value
     @JsonDeserialize
+    @Slf4j
     class GetCatalog implements CatalogCommand {
         ActorRef<Optional<Catalog>> replyTo;
 
         @JsonCreator
         public GetCatalog(ActorRef<Optional<Catalog>> replyTo) {
             this.replyTo = replyTo;
+            log.info("GetCatalog ....");
         }
     }
 
