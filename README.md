@@ -5,39 +5,27 @@ Steps to run application
 Step 1: clone the code
 ```
 git clone https://github.com/ngollapothu-retisio/play-java-akka-sample.git
-git checkout 0.5-akka-r2dbc-repository
+git checkout 0.6-akka-message-listener
 git pull
 ```
 Step 2: run the service in local
 ```
+$ ./migrate-read-db.sh postgres postgres localhost:5432
+
 sbt -Dconfig.resource=application-local.conf run
 ```
 
-Step 3: 
+Step 3: send brand message to kafka topic brand-events
 
-GET catalogs using filters
 ```
-curl --location --request GET 'http://localhost:9000/catalogs?filter=active%3A%3Atrue&limit=10&offset=0'
+C:\tools\kafka_2.11-2.4.1>bin\windows\kafka-console-producer.bat --broker-list localhost:9092 --topic brand-events
+>{"event":"brand-created","brandId":"brand-001","brand":{"brandId":"brand-001","brandName":"LG","active":true,"deleted":false}}
 ```
-Response:
+
+step 4: check the brand table in read side database
 ```
-{
-    "pagination": {
-        "totalCount": 1,
-        "limit": 10,
-        "offset": 0
-    },
-    "catalogs": [
-        {
-            "catalogId": "cat-001",
-            "catalogName": "Electronics",
-            "active": true,
-            "deleted": false
-        }
-    ]
-}
+select * from brand;
 ```
-Resulted values are fetched from read side database without ES-CQRS, directly from read side table using R2DBC Repository.
 
 About the code
 
@@ -51,199 +39,131 @@ https://github.com/ngollapothu-retisio/play-java-akka-sample/blob/0.3-akka-db-pr
 
 https://github.com/ngollapothu-retisio/play-java-akka-sample/blob/0.4-akka-message-projection/README.md
 
+https://github.com/ngollapothu-retisio/play-java-akka-sample/blob/0.5-akka-r2dbc-repository/README.md
+
 New files are added in this branch
 ```
-1. CatalogRepository.java
-   R2dbcConnectionFactroyWrapper.java
-   GetCatalogsResponse
+1. MessageHandler.java
+   MessageListener.java
+   BrandMessageHandler.java
+2. BrandRepository.java
+   BrandMessage
+3. V3__brand_readside_1.sql
 
 ```
 
 **Details:**
 
-1. Created a new REST Api to get list of catalog details for given filter criteria
+1. In this example we will explore Kafka message listener. MessageHandler.java, MessageListener.java are created to configure kafka lister. These are re-usable components.
+BrandMessageHandler class implements MessageHandler interface,  BrandMessageHandler injected in CatalogServiceImpl constructor and invoked MessageListener.init method.
 ```
-curl --location --request GET 'http://localhost:9000/catalogs?filter=active%3A%3Atrue&limit=10&offset=0'
+MessageListener.init(4, typedActorSystem,"brand-events","catalog-brand-group", brandMessageHandler);
 ```
-file: conf/routes
-```
-GET     /catalogs          com.retisio.arc.controller.CatalogServiceController.getCatalogs(request:Request)
-```
-file: CatalogServiceController.java
-```
-    public CompletionStage<Result> getCatalogs(Http.Request request) {
-        return catalogService.getCatalogs(
-                request.queryString("filter"),
-                request.queryString("limit"),
-                request.queryString("offset")
-        )
-                .thenApply(r -> ok(Json.toJson(r)));
-    }
-```
-
-2. Get Catalogs Api added in CatalogService interface
-file: CatalogService.java
-```
-    public CompletionStage<GetCatalogsResponse> getCatalogs(Optional<String> filter, Optional<String> limit, Optional<String> offset);
-```
-implementation is provided in CatalogServiceImpl class 
 
 file: CatalogServiceImpl.java
 ```
     @Inject
-    private CatalogRepository catalogRepository;
-    
-    //.....
+    public CatalogServiceImpl(ActorSystem classicActorSystem,
+                              BrandMessageHandler brandMessageHandler,
+                              KafkaUtil kafkaUtil){
+        akka.actor.typed.ActorSystem<Void> typedActorSystem = Adapter.toTyped(classicActorSystem);
+        this.clusterSharding = ClusterSharding.get(typedActorSystem);
 
-    @Override
-    public CompletionStage<GetCatalogsResponse> getCatalogs(Optional<String> filter, Optional<String> limit, Optional<String> offset) {
-        return catalogRepository.getCatalogs(filter, limit, offset);
+        CatalogAggregate.init(typedActorSystem, 3,35);
+
+        CatalogDbProjection.init(typedActorSystem);
+        CatalogMessageProjection.init(typedActorSystem, kafkaUtil);
+
+        MessageListener.init(4, typedActorSystem,"brand-events","catalog-brand-group", brandMessageHandler);
+    }
+```
+
+file: MessageHandler.java
+```
+public interface MessageHandler {
+    public CompletionStage<Done> process(ConsumerRecord<String, String> record) throws Exception;
+}
+```
+file: MessageListener.java
+```
+@Slf4j
+public class MessageListener {
+
+    public static void init(int numberOfListeners, ActorSystem<?> system, String topic, String groupId, MessageHandler messageHandler) {
+        for (int i = 0; i < numberOfListeners; i++) {
+            init(system, topic, groupId, messageHandler);
+        }
+    }
+    private static void init(ActorSystem<?> system, String topic, String groupId, MessageHandler messageHandler) {
+        ConsumerSettings<String, String> consumerSettings =
+                ConsumerSettings.create(system, new StringDeserializer(), new StringDeserializer())
+                        .withGroupId(groupId);
+        CommitterSettings committerSettings = CommitterSettings.create(system);
+
+        Duration minBackoff = Duration.ofSeconds(1);
+        Duration maxBackoff = Duration.ofSeconds(30);
+        double randomFactor = 0.1;
+
+        RestartSource
+                .onFailuresWithBackoff(
+                        RestartSettings.create(minBackoff, maxBackoff, randomFactor),
+                        () -> {
+                            return Consumer.committableSource(
+                                    consumerSettings, Subscriptions.topics(topic))
+                                    .mapAsync(
+                                            1,
+                                            msg -> handleRecord(messageHandler, msg.record()).thenApply(done -> msg.committableOffset()))
+                                    .via(Committer.flow(committerSettings));
+                        })
+                .run(system);
+        log.info("Listener is started for topic::{}, groupId::{}, messageHandler::{}", topic, groupId, messageHandler.getClass().getName());
     }
 
+    private static CompletionStage<Done> handleRecord(MessageHandler messageHandler, ConsumerRecord<String, String> record)
+            throws Exception {
+        return messageHandler.process(record);
+    }
+}
 ```
-3. We need a db connection to execute sql queries in r2dbc as well. Below wrapper class is created to service connection objects from r2dbc connection pool.
-
-file: R2dbcConnectionFactroyWrapper.java
+file: BrandMessageHandler.java
 ```
 @Slf4j
 @Singleton
-public class R2dbcConnectionFactroyWrapper {
+public class BrandMessageHandler implements MessageHandler {
 
-    private final ConnectionFactory connectionFactory;
-
-    @Inject
-    public R2dbcConnectionFactroyWrapper(ActorSystem classicActorSystem){
-        akka.actor.typed.ActorSystem<Void> typedActorSystem = Adapter.toTyped(classicActorSystem);
-        this.connectionFactory = ConnectionFactoryProvider.get(typedActorSystem)
-                .connectionFactoryFor("akka.projection.r2dbc.connection-factory");
-    }
-
-    public ConnectionFactory connectionFactory(){
-        return this.connectionFactory;
-    }
-}
-```
-
-4. Repository class where we create all CRUD methods which are not relevant to ES-CQRS.
-
-file: CatalogRepository.java
-```
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Inject
-    private R2dbcConnectionFactroyWrapper connectionFactoryWrapper;
+    private BrandRepository brandRepository;
 
-    public CompletionStage<GetCatalogsResponse> getCatalogs(Optional<String> filter, Optional<String> limit, Optional<String> offset) {
-        return Mono.usingWhen(connectionFactoryWrapper.connectionFactory().create(),
-                connection -> {
-                    //...
-                    StatementWrapper statementWrapper = new StatementWrapper(connection.createStatement(query));
-                    return Flux.from(statementWrapper.getStatement().execute())
-                            .flatMap(result -> result.map(row -> {
-                            //..
-                           });
-                },
-                connection -> connection.close()).toFuture();
+    public BrandMessageHandler(){
+        objectMapper.registerModule(new DefaultScalaModule());
     }
-``` 
-In above code snipped shows abstracted details of how db connection is pulled from connection pool factory, statement is executed, connection is released.
 
- - To get connection object
- ```
-connectionFactoryWrapper.connectionFactory().create()
-```
- - prepare a sql statement
- ```
-StatementWrapper statementWrapper = new StatementWrapper(connection.createStatement(query));
-```
- - execute the sql statement and retrieve the rows details 
-```
-                    Flux.from(statementWrapper.getStatement().execute())
-                            .flatMap(result -> result.map(row -> {
-```
- - to release the connection to pool
-```
-connection -> connection.close()
-```
+    @Override
+    public CompletionStage<Done> process(ConsumerRecord<String, String> record) throws Exception {
+        String message = record.value();
+        log.info("message:: {}", message);
+        return process(message);
+    }
 
-file: CatalogRepository.java
-```
-@Slf4j
-public class CatalogRepository {
-
-    private Map<String, String> columnMap = new HashMap<String, String>() {
-        {
-            put("catalogId", "catalog_id");
-            put("catalogName", "catalog_name");
-            put("active", "is_active");
-            put("deleted", "is_deleted");
+    public CompletionStage<Done> process(String message) {
+        try {
+            BrandMessage brandMessage = objectMapper.readValue(message, BrandMessage.class);
+            if (Objects.nonNull(brandMessage) && brandMessage.getBrand() !=null && brandMessage.getBrand().getBrandId() != null){
+                return brandRepository.saveBrand(brandMessage.getBrand());
+            } else {
+                log.warn("brandMessage are empty/null, hence skipping the message::{}", message);
+            }
+        } catch (Exception ex) {
+            log.error("ERROR_IN_CONSUMING_BRAND_EVENT : {} WITH_ERROR :", message, ex);
+            if (!(ex instanceof JsonMappingException || ex instanceof JsonProcessingException))
+                throw new RuntimeException(ex);
         }
-    };
 
-    private List<String> booleanProperties = Arrays.asList("active", "deleted");
-
-    @Inject
-    private R2dbcConnectionFactroyWrapper connectionFactoryWrapper;
-
-    public CompletionStage<GetCatalogsResponse> getCatalogs(Optional<String> filter, Optional<String> limit, Optional<String> offset) {
-        return Mono.usingWhen(connectionFactoryWrapper.connectionFactory().create(),
-                connection -> {
-                    String filterQuery = filter
-                            .map(f -> {
-                                log.info("filter::{}", f);
-                                return Arrays.asList(f.split(",")).stream()
-                                        .map(c -> Arrays.asList(c.split("::")))
-                                        .filter(m -> m.size() == 2)
-                                        .map(m -> {
-                                            String columnName = columnMap.get(m.get(0));
-                                            boolean isBool = booleanProperties.contains(m.get(0));
-                                            return columnName+ "=" +(isBool?m.get(1):("'"+m.get(1)+"'"));
-                                        })
-                                        .collect(Collectors.joining(" and "));
-                            })
-                            .filter(StringUtils::isNotBlank)
-                            .map(c -> "where "+c)
-                            .orElseGet(()->"");
-                    String pageSize = limit.orElseGet(()->"10");
-                    String offSetValue = offset.orElseGet(()->"0");
-                    String query = "select catalog_id, catalog_name, is_active, is_deleted, COUNT(1) OVER () as TOTAL_COUNT from catalog " +
-                            filterQuery + " OFFSET "+offSetValue+" LIMIT "+pageSize;
-
-                    AtomicInteger searchTotalCount = new AtomicInteger();
-                    log.info("query::{}", query);
-                    StatementWrapper statementWrapper = new StatementWrapper(connection.createStatement(query));
-                    return Flux.from(statementWrapper.getStatement().execute())
-                            .flatMap(result -> result.map(row -> {
-                                searchTotalCount.set(row.get("TOTAL_COUNT", Integer.class));
-                                return GetCatalogResponse.builder()
-                                        .catalogId(row.get("catalog_id", String.class))
-                                        .catalogName(row.get("catalog_name", String.class))
-                                        .active(row.get("is_active", Boolean.class))
-                                        .deleted(row.get("is_deleted", Boolean.class))
-                                        .build();
-                            }))
-                            .collectList()
-                            .map(list -> Optional.ofNullable(list))
-                            .switchIfEmpty(Mono.just(Optional.empty()))
-                            .map(optList -> {
-                                List<GetCatalogResponse> list = new ArrayList<>();
-                                if(optList.isPresent()){
-                                    list.addAll(optList.get());
-                                }
-                                GetCatalogsResponse.Pagination pagination =
-                                        new GetCatalogsResponse.Pagination(
-                                                searchTotalCount.get(),
-                                                Integer.parseInt(pageSize),
-                                                Integer.parseInt(offSetValue)
-                                        );
-                                return GetCatalogsResponse.builder()
-                                        .pagination(pagination)
-                                        .catalogs(list)
-                                        .build();
-                            });
-                },
-                connection -> connection.close()).toFuture();
+        return CompletableFuture.completedFuture((Done.getInstance()));
     }
-
 }
+
 ```
 

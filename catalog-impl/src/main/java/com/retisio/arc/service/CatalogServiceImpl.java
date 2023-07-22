@@ -9,6 +9,8 @@ import com.retisio.arc.aggregate.catalog.Catalog;
 import com.retisio.arc.aggregate.catalog.CatalogAggregate;
 import com.retisio.arc.aggregate.catalog.CatalogCommand;
 import com.retisio.arc.execution.ServiceExecutionContext;
+import com.retisio.arc.listener.MessageListener;
+import com.retisio.arc.listener.handler.BrandMessageHandler;
 import com.retisio.arc.projection.catalog.CatalogDbProjection;
 import com.retisio.arc.projection.catalog.CatalogMessageProjection;
 import com.retisio.arc.repository.catalog.CatalogRepository;
@@ -35,7 +37,9 @@ public class CatalogServiceImpl implements CatalogService {
     private CatalogRepository catalogRepository;
 
     @Inject
-    public CatalogServiceImpl(ActorSystem classicActorSystem, KafkaUtil kafkaUtil){
+    public CatalogServiceImpl(ActorSystem classicActorSystem,
+                              BrandMessageHandler brandMessageHandler,
+                              KafkaUtil kafkaUtil){
         akka.actor.typed.ActorSystem<Void> typedActorSystem = Adapter.toTyped(classicActorSystem);
         this.clusterSharding = ClusterSharding.get(typedActorSystem);
 
@@ -43,6 +47,8 @@ public class CatalogServiceImpl implements CatalogService {
 
         CatalogDbProjection.init(typedActorSystem);
         CatalogMessageProjection.init(typedActorSystem, kafkaUtil);
+
+        MessageListener.init(4, typedActorSystem,"brand-events","catalog-brand-group", brandMessageHandler);
     }
 
     private static final Duration askTimeout = Duration.ofSeconds(10);
