@@ -12,7 +12,8 @@ lazy val `catalog-api` = (project in file("catalog-api"))
   .settings(common)
   .settings(
     libraryDependencies ++= Seq(
-      lombok
+      lombok,
+      commonslang3
     )
   )
 
@@ -27,6 +28,7 @@ lazy val `catalog-impl` = (project in file("catalog-impl"))
   .dependsOn(`catalog-api`)
 
 val lombok = "org.projectlombok" % "lombok" % "1.18.2"
+val commonslang3 = "org.apache.commons" % "commons-lang3" % "3.9"
 
 def common = Seq(
   dockerExposedPorts := Seq(9000, 8558, 9091, 10001),

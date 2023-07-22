@@ -11,8 +11,10 @@ import com.retisio.arc.aggregate.catalog.CatalogCommand;
 import com.retisio.arc.execution.ServiceExecutionContext;
 import com.retisio.arc.projection.catalog.CatalogDbProjection;
 import com.retisio.arc.projection.catalog.CatalogMessageProjection;
+import com.retisio.arc.repository.catalog.CatalogRepository;
 import com.retisio.arc.request.catalog.CreateCatalogRequest;
 import com.retisio.arc.response.catalog.GetCatalogResponse;
+import com.retisio.arc.response.catalog.GetCatalogsResponse;
 import com.retisio.arc.util.KafkaUtil;
 import lombok.extern.slf4j.Slf4j;
 
@@ -28,6 +30,9 @@ public class CatalogServiceImpl implements CatalogService {
 
     @Inject
     private ServiceExecutionContext serviceExecutionContext;
+
+    @Inject
+    private CatalogRepository catalogRepository;
 
     @Inject
     public CatalogServiceImpl(ActorSystem classicActorSystem, KafkaUtil kafkaUtil){
@@ -75,6 +80,11 @@ public class CatalogServiceImpl implements CatalogService {
                     }
                     return GetCatalogResponse.builder().build();
                 });
+    }
+
+    @Override
+    public CompletionStage<GetCatalogsResponse> getCatalogs(Optional<String> filter, Optional<String> limit, Optional<String> offset) {
+        return catalogRepository.getCatalogs(filter, limit, offset);
     }
 
 }

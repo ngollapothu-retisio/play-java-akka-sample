@@ -13,6 +13,7 @@ import play.mvc.Http;
 import play.mvc.Result;
 
 import javax.inject.Inject;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 
@@ -42,6 +43,15 @@ public class CatalogServiceController extends Controller  {
         log.info("createCatalog api invoked ....");
         CreateCatalogRequest createCatalogRequest = Json.fromJson(request.body().asJson(), CreateCatalogRequest.class);
         return catalogService.createCatalog(createCatalogRequest)
+                .thenApply(r -> ok(Json.toJson(r)));
+    }
+    public CompletionStage<Result> getCatalogs(Http.Request request) {
+        log.info("getCatalogs api invoked ....");
+        return catalogService.getCatalogs(
+                request.queryString("filter"),
+                request.queryString("limit"),
+                request.queryString("offset")
+        )
                 .thenApply(r -> ok(Json.toJson(r)));
     }
 }
