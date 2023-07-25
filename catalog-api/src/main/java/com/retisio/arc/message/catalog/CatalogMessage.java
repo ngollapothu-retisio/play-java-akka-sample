@@ -8,6 +8,9 @@ import lombok.Value;
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "event", defaultImpl = Void.class)
 @JsonSubTypes({
         @JsonSubTypes.Type(CatalogMessage.CatalogCreatedMessage.class),
+        @JsonSubTypes.Type(CatalogMessage.CatalogUpdatedMessage.class),
+        @JsonSubTypes.Type(CatalogMessage.CatalogPatchedMessage.class),
+        @JsonSubTypes.Type(CatalogMessage.CatalogDeletedMessage.class),
 })
 public abstract class CatalogMessage {
 
@@ -29,6 +32,39 @@ public abstract class CatalogMessage {
         }
     }
 
+    @JsonTypeName(value = "catalog-updated")
+    @Value
+    public final static class CatalogUpdatedMessage extends CatalogMessage {
+
+        public final CatalogMessage.Catalog catalog;
+
+        public CatalogUpdatedMessage(CatalogMessage.Catalog catalog) {
+            super(catalog.getCatalogId());
+            this.catalog = catalog;
+        }
+    }
+    @JsonTypeName(value = "catalog-patched")
+    @Value
+    public final static class CatalogPatchedMessage extends CatalogMessage {
+
+        public final CatalogMessage.Catalog catalog;
+
+        public CatalogPatchedMessage(CatalogMessage.Catalog catalog) {
+            super(catalog.getCatalogId());
+            this.catalog = catalog;
+        }
+    }
+    @JsonTypeName(value = "catalog-deleted")
+    @Value
+    public final static class CatalogDeletedMessage extends CatalogMessage {
+
+        public final CatalogMessage.Catalog catalog;
+
+        public CatalogDeletedMessage(CatalogMessage.Catalog catalog) {
+            super(catalog.getCatalogId());
+            this.catalog = catalog;
+        }
+    }
     @Data
     @AllArgsConstructor
     @JsonInclude(JsonInclude.Include.NON_NULL)

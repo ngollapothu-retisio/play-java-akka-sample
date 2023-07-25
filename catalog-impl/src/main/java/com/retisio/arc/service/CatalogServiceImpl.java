@@ -139,18 +139,30 @@ public class CatalogServiceImpl implements CatalogService {
 
     @Override
     public CompletionStage<GetCatalogResponse> updateCatalog(UpdateCatalogRequest request) {
-        return updateCatalog(request, ref(request.getCatalogId()))
-                .thenApply(optCatalog -> {
-                    if(optCatalog.isPresent()){
-                        Catalog catalog = optCatalog.get();
-                        return GetCatalogResponse.builder()
-                                .catalogId(catalog.getCatalogId())
-                                .catalogName(catalog.getCatalogName())
-                                .active(catalog.getActive())
-                                .deleted(catalog.getDeleted())
-                                .build();
+        return getCatalog(ref(request.getCatalogId()))
+                .thenCompose(optionalCatalog -> {
+                    if(optionalCatalog.isPresent()){
+                        if(optionalCatalog.get().getDeleted().booleanValue() == true){
+                            throw new IllegalOperationException(
+                                    Arrays.asList(
+                                            new Error("ERROR_003", "Update on already deleted catalog "+request.getCatalogId()+" is not allowed.")
+                                    )
+                            );
+                        }
                     }
-                    return GetCatalogResponse.builder().build();
+                    return updateCatalog(request, ref(request.getCatalogId()))
+                            .thenApply(optCatalog -> {
+                                if(optCatalog.isPresent()){
+                                    Catalog catalog = optCatalog.get();
+                                    return GetCatalogResponse.builder()
+                                            .catalogId(catalog.getCatalogId())
+                                            .catalogName(catalog.getCatalogName())
+                                            .active(catalog.getActive())
+                                            .deleted(catalog.getDeleted())
+                                            .build();
+                                }
+                                return GetCatalogResponse.builder().build();
+                            });
                 });
     }
 
@@ -162,6 +174,12 @@ public class CatalogServiceImpl implements CatalogService {
                         throw new NotFoundException(
                                 Arrays.asList(
                                         new Error("ERROR_002", "Catalog "+id+" is not found.")
+                                )
+                        );
+                    } else if(optionalCatalog.get().getDeleted().booleanValue() == true){
+                        throw new IllegalOperationException(
+                                Arrays.asList(
+                                        new Error("ERROR_003", "Patch on already deleted catalog "+id+" is not allowed.")
                                 )
                         );
                     }
@@ -227,6 +245,12 @@ public class CatalogServiceImpl implements CatalogService {
                         throw new NotFoundException(
                                 Arrays.asList(
                                         new Error("ERROR_002", "Catalog "+id+" is not found.")
+                                )
+                        );
+                    } else if(optionalCatalog.get().getDeleted().booleanValue() == true){
+                        throw new IllegalOperationException(
+                                Arrays.asList(
+                                        new Error("ERROR_003", "Catalog "+id+" is deleted.")
                                 )
                         );
                     }
