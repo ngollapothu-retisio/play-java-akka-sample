@@ -27,6 +27,7 @@ public class BrandRepository {
 
     @Inject
     private R2dbcConnectionFactroyWrapper connectionFactoryWrapper;
+
     private final akka.actor.typed.ActorSystem<Void> typedActorSystem;
 
     @Inject
@@ -69,8 +70,10 @@ public class BrandRepository {
         statementWrapper.bind(index.incrementAndGet(), Optional.ofNullable(brand.getActive()).orElseGet(()->false), Boolean.class);
         statementWrapper.bind(index.incrementAndGet(), Optional.ofNullable(brand.getDeleted()).orElseGet(()->false), Boolean.class);
         statementWrapper.bind(index.incrementAndGet(), Timestamp.valueOf(LocalDateTime.now()), Timestamp.class);
-        return Mono.fromCompletionStage(r2dbcSession.updateOne(statementWrapper.getStatement())
-                .thenApply(integer -> Done.getInstance()));
+        return Mono.fromCompletionStage(
+                r2dbcSession.updateOne(statementWrapper.getStatement())
+                    .thenApply(integer -> Done.getInstance())
+        );
     }
 
 }

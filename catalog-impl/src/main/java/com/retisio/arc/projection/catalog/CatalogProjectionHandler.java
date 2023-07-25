@@ -14,16 +14,20 @@ import com.retisio.arc.aggregate.catalog.CatalogAggregate;
 import com.retisio.arc.aggregate.catalog.CatalogCommand;
 import com.retisio.arc.aggregate.catalog.CatalogEvent;
 import com.retisio.arc.message.catalog.CatalogMessage;
+import com.retisio.arc.r2dbc.StatementWrapper;
 import com.retisio.arc.util.KafkaUtil;
 import lombok.extern.slf4j.Slf4j;
 
+import java.sql.Timestamp;
 import java.time.Duration;
+import java.time.LocalDateTime;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
+import java.util.concurrent.atomic.AtomicInteger;
 
 @Slf4j
-public class CatalogMessageProjectionHandler extends R2dbcHandler<EventEnvelope<CatalogEvent>> {
+public class CatalogProjectionHandler extends R2dbcHandler<EventEnvelope<CatalogEvent>> {
 
     private final Duration askTimeout = Duration.ofSeconds(5);
     private final String topic;
@@ -31,7 +35,7 @@ public class CatalogMessageProjectionHandler extends R2dbcHandler<EventEnvelope<
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final ClusterSharding clusterSharding;
 
-    public CatalogMessageProjectionHandler(ClusterSharding clusterSharding, String topic, KafkaUtil kafkaUtil) {
+    public CatalogProjectionHandler(ClusterSharding clusterSharding, String topic, KafkaUtil kafkaUtil) {
         this.topic = topic;
         this.kafkaUtil = kafkaUtil;
         this.clusterSharding = clusterSharding;
@@ -41,8 +45,42 @@ public class CatalogMessageProjectionHandler extends R2dbcHandler<EventEnvelope<
     @Override
     public CompletionStage<Done> process(R2dbcSession session, EventEnvelope<CatalogEvent> envelope) {
         CatalogEvent event = envelope.event();
-        return sendToKafkaTopic(event);
+        return processReadSide(session, event)
+                .thenCompose(done -> sendToKafkaTopic(event));
     }
+    private CompletionStage<Done> processReadSide(R2dbcSession session, CatalogEvent event){
+        if(event instanceof CatalogEvent.CatalogCreated) {
+            return saveCatalog(session, (CatalogEvent.CatalogCreated)event);
+        }else {
+            return CompletableFuture.completedFuture(Done.getInstance());
+        }
+    }
+    private static final String SAVE_CATALOG_QUERY = "INSERT INTO CATALOG(" +
+            "CATALOG_ID, " +
+            "CATALOG_NAME, " +
+            "IS_ACTIVE, " +
+            "IS_DELETED, " +
+            "LAST_MODIFIED_TMST) " +
+            "VALUES ($1, $2, $3, $4, $5) " +
+            "on conflict (CATALOG_ID) DO UPDATE set " +
+            "CATALOG_ID=excluded.CATALOG_ID, " +
+            "CATALOG_NAME=excluded.CATALOG_NAME, " +
+            "IS_ACTIVE=excluded.IS_ACTIVE, " +
+            "IS_DELETED=excluded.IS_DELETED, " +
+            "LAST_MODIFIED_TMST=now()";
+    private CompletionStage<Done> saveCatalog(R2dbcSession session, CatalogEvent.CatalogCreated event) {
+        log.info("saveCatalog catalogId::{}", event.catalogId);
+        AtomicInteger index = new AtomicInteger(-1);
+        StatementWrapper statementWrapper = new StatementWrapper(session.createStatement(SAVE_CATALOG_QUERY));
+        statementWrapper.bind(index.incrementAndGet(), event.catalogId, String.class);
+        statementWrapper.bind(index.incrementAndGet(), event.getCatalogName(), String.class);
+        statementWrapper.bind(index.incrementAndGet(), event.getActive(), Boolean.class);
+        statementWrapper.bind(index.incrementAndGet(), false, Boolean.class);
+        statementWrapper.bind(index.incrementAndGet(), Timestamp.valueOf(LocalDateTime.now()), Timestamp.class);
+        return session.updateOne(statementWrapper.getStatement())
+                .thenApply(rowsUpdated -> Done.getInstance());
+    }
+
     public EntityRef<CatalogCommand> ref(String id) {
         return clusterSharding.entityRefFor(CatalogAggregate.ENTITY_TYPE_KEY, id);
     }
@@ -90,7 +128,7 @@ public class CatalogMessageProjectionHandler extends R2dbcHandler<EventEnvelope<
     private static CatalogMessage.Catalog convertToCatalogCreatedMessage(Catalog catalog) {
         return new CatalogMessage.Catalog(
                 catalog.getCatalogId(),
-                catalog.getCatalogId(),
+                catalog.getCatalogName(),
                 catalog.getActive(),
                 catalog.getDeleted()
         );

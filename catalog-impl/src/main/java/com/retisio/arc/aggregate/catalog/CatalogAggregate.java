@@ -68,6 +68,15 @@ public class CatalogAggregate extends EventSourcedBehaviorWithEnforcedReplies<Ca
                 .onCommand(CatalogCommand.CreateCatalog.class, (state, cmd) -> Effect()
                         .persist(CatalogEvent.CatalogCreated.getInstance(cmd))
                         .thenReply(cmd.getReplyTo(), __ -> Done.getInstance()))
+                .onCommand(CatalogCommand.UpdateCatalog.class, (state, cmd) -> Effect()
+                        .persist(CatalogEvent.CatalogUpdated.getInstance(cmd))
+                        .thenReply(cmd.getReplyTo(), __ -> Done.getInstance()))
+                .onCommand(CatalogCommand.PatchCatalog.class, (state, cmd) -> Effect()
+                        .persist(CatalogEvent.CatalogPatched.getInstance(cmd))
+                        .thenReply(cmd.getReplyTo(), __ -> Done.getInstance()))
+                .onCommand(CatalogCommand.DeleteCatalog.class, (state, cmd) -> Effect()
+                        .persist(CatalogEvent.CatalogDeleted.getInstance(cmd))
+                        .thenReply(cmd.getReplyTo(), __ -> Done.getInstance()))
                 .build();
     }
 
@@ -77,6 +86,12 @@ public class CatalogAggregate extends EventSourcedBehaviorWithEnforcedReplies<Ca
                 forAnyState()
                 .onEvent(CatalogEvent.CatalogCreated.class,
                         (state, evt) -> state.createCatalog(evt))
+                .onEvent(CatalogEvent.CatalogUpdated.class,
+                        (state, evt) -> state.updateCatalog(evt))
+                .onEvent(CatalogEvent.CatalogPatched.class,
+                        (state, evt) -> state.patchCatalog(evt))
+                .onEvent(CatalogEvent.CatalogDeleted.class,
+                        (state, evt) -> state.deleteCatalog(evt))
                 .build();
     }
     //-------------------------------

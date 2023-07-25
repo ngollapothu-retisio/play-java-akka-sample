@@ -16,6 +16,19 @@ public interface CatalogCommand extends JsonSerializable {
     @Value
     @JsonDeserialize
     @Slf4j
+    class GetCatalog implements CatalogCommand {
+        ActorRef<Optional<Catalog>> replyTo;
+
+        @JsonCreator
+        public GetCatalog(ActorRef<Optional<Catalog>> replyTo) {
+            this.replyTo = replyTo;
+            log.info("GetCatalog ....");
+        }
+    }
+
+    @Value
+    @JsonDeserialize
+    @Slf4j
     class CreateCatalog implements CatalogCommand {
         String catalogId;
         String catalogName;
@@ -35,13 +48,53 @@ public interface CatalogCommand extends JsonSerializable {
     @Value
     @JsonDeserialize
     @Slf4j
-    class GetCatalog implements CatalogCommand {
-        ActorRef<Optional<Catalog>> replyTo;
+    class UpdateCatalog implements CatalogCommand {
+        String catalogId;
+        String catalogName;
+        Boolean active;
+        ActorRef<Done> replyTo;
 
         @JsonCreator
-        public GetCatalog(ActorRef<Optional<Catalog>> replyTo) {
+        public UpdateCatalog(String catalogId, String catalogName, Boolean active, ActorRef<Done> replyTo) {
+            this.catalogId = catalogId;
+            this.catalogName = catalogName;
+            this.active = active;
             this.replyTo = replyTo;
-            log.info("GetCatalog ....");
+            log.info("CreateCatalog ....");
+        }
+    }
+
+    @Value
+    @JsonDeserialize
+    @Slf4j
+    class PatchCatalog implements CatalogCommand {
+        String catalogId;
+        String catalogName;
+        Boolean active;
+        ActorRef<Done> replyTo;
+
+        @JsonCreator
+        public PatchCatalog(String catalogId, String catalogName, Boolean active, ActorRef<Done> replyTo) {
+            this.catalogId = catalogId;
+            this.catalogName = catalogName;
+            this.active = active;
+            this.replyTo = replyTo;
+            log.info("CreateCatalog ....");
+        }
+    }
+
+    @Value
+    @JsonDeserialize
+    @Slf4j
+    class DeleteCatalog implements CatalogCommand {
+        String catalogId;
+        ActorRef<Done> replyTo;
+
+        @JsonCreator
+        public DeleteCatalog(String catalogId, ActorRef<Done> replyTo) {
+            this.catalogId = catalogId;
+            this.replyTo = replyTo;
+            log.info("CreateCatalog ....");
         }
     }
 

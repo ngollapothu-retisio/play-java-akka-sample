@@ -39,4 +39,71 @@ public abstract class CatalogEvent implements JsonSerializable {
         }
     }
 
+    @Value
+    @JsonDeserialize
+    @Slf4j
+    public final static class CatalogUpdated extends CatalogEvent {
+
+        String catalogName;
+        Boolean active;
+
+        @JsonCreator
+        private CatalogUpdated(String catalogId, String catalogName, Boolean active) {
+            super(catalogId);
+            this.catalogName = catalogName;
+            this.active = active;
+            log.info("CatalogUpdated ....");
+        }
+
+        static CatalogUpdated getInstance(CatalogCommand.UpdateCatalog cmd) {
+            return new CatalogUpdated(
+                    cmd.getCatalogId(),
+                    cmd.getCatalogName(),
+                    cmd.getActive()
+            );
+        }
+    }
+
+    @Value
+    @JsonDeserialize
+    @Slf4j
+    public final static class CatalogPatched extends CatalogEvent {
+
+        String catalogName;
+        Boolean active;
+
+        @JsonCreator
+        private CatalogPatched(String catalogId, String catalogName, Boolean active) {
+            super(catalogId);
+            this.catalogName = catalogName;
+            this.active = active;
+            log.info("CatalogPatched ....");
+        }
+
+        static CatalogPatched getInstance(CatalogCommand.PatchCatalog cmd) {
+            return new CatalogPatched(
+                    cmd.getCatalogId(),
+                    cmd.getCatalogName(),
+                    cmd.getActive()
+            );
+        }
+    }
+
+    @Value
+    @JsonDeserialize
+    @Slf4j
+    public final static class CatalogDeleted extends CatalogEvent {
+
+        @JsonCreator
+        private CatalogDeleted(String catalogId) {
+            super(catalogId);
+            log.info("CatalogDeleted ....");
+        }
+
+        static CatalogDeleted getInstance(CatalogCommand.DeleteCatalog cmd) {
+            return new CatalogDeleted(
+                    cmd.getCatalogId()
+            );
+        }
+    }
 }

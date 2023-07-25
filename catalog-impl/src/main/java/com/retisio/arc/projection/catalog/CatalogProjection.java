@@ -1,6 +1,7 @@
 package com.retisio.arc.projection.catalog;
 
 import akka.actor.typed.ActorSystem;
+import akka.cluster.sharding.typed.javadsl.ClusterSharding;
 import akka.cluster.sharding.typed.javadsl.ShardedDaemonProcess;
 import akka.japi.Pair;
 import akka.persistence.query.Offset;
@@ -15,6 +16,7 @@ import akka.projection.r2dbc.R2dbcProjectionSettings;
 import akka.projection.r2dbc.javadsl.R2dbcProjection;
 import com.retisio.arc.aggregate.catalog.CatalogAggregate;
 import com.retisio.arc.aggregate.catalog.CatalogEvent;
+import com.retisio.arc.util.KafkaUtil;
 import lombok.extern.slf4j.Slf4j;
 
 import java.time.Duration;
@@ -22,9 +24,12 @@ import java.util.List;
 import java.util.Optional;
 
 @Slf4j
-public class CatalogDbProjection {
+public class CatalogProjection {
 
-    public static void init(ActorSystem system) {
+    public static void init(ActorSystem system, KafkaUtil kafkaUtil) {
+
+        String topic = system.settings().config().getString("catalog.kafka.message.topic");
+
         // Split the slices into 4 ranges
         int numberOfSliceRanges = 4;
         List<Pair<Integer, Integer>> sliceRanges =
@@ -34,14 +39,15 @@ public class CatalogDbProjection {
         ShardedDaemonProcess.get(system)
                 .init(
                         ProjectionBehavior.Command.class,
-                        "CatalogDbProjection",
+                        "CatalogProjection",
                         sliceRanges.size(),
-                        i -> ProjectionBehavior.create(createProjection(system, sliceRanges.get(i))),
+                        i -> ProjectionBehavior.create(createProjection(system, sliceRanges.get(i), topic, kafkaUtil)),
                         ProjectionBehavior.stopMessage());
     }
 
     private static Projection<EventEnvelope<CatalogEvent>> createProjection(ActorSystem<?> system,
-                                                                            Pair<Integer, Integer> sliceRange) {
+                                                                            Pair<Integer, Integer> sliceRange,
+                                                                            String topic, KafkaUtil kafkaUtil) {
         int minSlice = sliceRange.first();
         int maxSlice = sliceRange.second();
 
@@ -52,14 +58,14 @@ public class CatalogDbProjection {
                         system, R2dbcReadJournal.Identifier(), entityType, minSlice, maxSlice);
 
         ProjectionId projectionId =
-                ProjectionId.of("CatalogDbProjection", "catalog-db-" + minSlice + "-" + maxSlice);
+                ProjectionId.of("CatalogProjection", "catalog-message-" + minSlice + "-" + maxSlice);
         Optional<R2dbcProjectionSettings> settings = Optional.empty();
 
         int saveOffsetAfterEnvelopes = 100;
         Duration saveOffsetAfterDuration = Duration.ofMillis(500);
-        log.info("CatalogDbProjection init()..................");
+        log.info("CatalogProjection init()..................");
         return R2dbcProjection.atLeastOnce(
-                        projectionId, settings, sourceProvider, () -> new CatalogDbProjectionHandler(), system)
+                        projectionId, settings, sourceProvider, () -> new CatalogProjectionHandler(ClusterSharding.get(system), topic, kafkaUtil), system)
                         .withSaveOffset(saveOffsetAfterEnvelopes, saveOffsetAfterDuration);
     }
 }
