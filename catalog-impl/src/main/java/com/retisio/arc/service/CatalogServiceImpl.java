@@ -64,7 +64,7 @@ public class CatalogServiceImpl implements CatalogService {
     }
 
     private CompletionStage<Optional<Catalog>> getCatalog(EntityRef<CatalogCommand> ref) {
-        return ref.ask(CatalogCommand.GetCatalog::new, askTimeout);
+        return ref.ask(replyTo -> new CatalogCommand.GetCatalog(ref.getEntityId(), replyTo), askTimeout);
     }
 
     private CompletionStage<Optional<Catalog>> createCatalog(CreateCatalogRequest request, EntityRef<CatalogCommand> ref) {

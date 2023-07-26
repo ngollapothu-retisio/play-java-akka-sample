@@ -27,7 +27,7 @@ public abstract class CatalogEvent implements JsonSerializable {
             super(catalogId);
             this.catalogName = catalogName;
             this.active = active;
-            log.info("CatalogCreated ....");
+            log.info("CatalogCreated ....{}", catalogId);
         }
 
         static CatalogCreated getInstance(CatalogCommand.CreateCatalog cmd) {
@@ -52,7 +52,7 @@ public abstract class CatalogEvent implements JsonSerializable {
             super(catalogId);
             this.catalogName = catalogName;
             this.active = active;
-            log.info("CatalogUpdated ....");
+            log.info("CatalogUpdated ....{}", catalogId);
         }
 
         static CatalogUpdated getInstance(CatalogCommand.UpdateCatalog cmd) {
@@ -77,7 +77,7 @@ public abstract class CatalogEvent implements JsonSerializable {
             super(catalogId);
             this.catalogName = catalogName;
             this.active = active;
-            log.info("CatalogPatched ....");
+            log.info("CatalogPatched ....{}", catalogId);
         }
 
         static CatalogPatched getInstance(CatalogCommand.PatchCatalog cmd) {
@@ -97,7 +97,7 @@ public abstract class CatalogEvent implements JsonSerializable {
         @JsonCreator
         private CatalogDeleted(String catalogId) {
             super(catalogId);
-            log.info("CatalogDeleted ....");
+            log.info("CatalogDeleted ....{}", catalogId);
         }
 
         static CatalogDeleted getInstance(CatalogCommand.DeleteCatalog cmd) {

@@ -17,12 +17,14 @@ public interface CatalogCommand extends JsonSerializable {
     @JsonDeserialize
     @Slf4j
     class GetCatalog implements CatalogCommand {
+        String catalogId;
         ActorRef<Optional<Catalog>> replyTo;
 
         @JsonCreator
-        public GetCatalog(ActorRef<Optional<Catalog>> replyTo) {
+        public GetCatalog(String catalogId, ActorRef<Optional<Catalog>> replyTo) {
             this.replyTo = replyTo;
-            log.info("GetCatalog ....");
+            this.catalogId = catalogId;
+            log.info("GetCatalog ....{}", catalogId);
         }
     }
 
@@ -41,7 +43,7 @@ public interface CatalogCommand extends JsonSerializable {
             this.catalogName = catalogName;
             this.active = active;
             this.replyTo = replyTo;
-            log.info("CreateCatalog ....");
+            log.info("CreateCatalog ....{}", catalogId);
         }
     }
 
@@ -60,7 +62,7 @@ public interface CatalogCommand extends JsonSerializable {
             this.catalogName = catalogName;
             this.active = active;
             this.replyTo = replyTo;
-            log.info("CreateCatalog ....");
+            log.info("UpdateCatalog ....{}", catalogId);
         }
     }
 
@@ -79,7 +81,7 @@ public interface CatalogCommand extends JsonSerializable {
             this.catalogName = catalogName;
             this.active = active;
             this.replyTo = replyTo;
-            log.info("CreateCatalog ....");
+            log.info("PatchCatalog ....{}", catalogId);
         }
     }
 
@@ -94,7 +96,7 @@ public interface CatalogCommand extends JsonSerializable {
         public DeleteCatalog(String catalogId, ActorRef<Done> replyTo) {
             this.catalogId = catalogId;
             this.replyTo = replyTo;
-            log.info("CreateCatalog ....");
+            log.info("DeleteCatalog ....{}", catalogId);
         }
     }
 

@@ -143,7 +143,7 @@ public class CatalogProjectionHandler extends R2dbcHandler<EventEnvelope<Catalog
         return clusterSharding.entityRefFor(CatalogAggregate.ENTITY_TYPE_KEY, id);
     }
     public CompletionStage<Optional<Catalog>> getCatalog(EntityRef<CatalogCommand> ref) {
-        return ref.<Optional<Catalog>>ask(replyTo -> new CatalogCommand.GetCatalog(replyTo), askTimeout);
+        return ref.<Optional<Catalog>>ask(replyTo -> new CatalogCommand.GetCatalog(ref.getEntityId(), replyTo), askTimeout);
     }
     private String toJsonString(Object object){
         if(object == null){

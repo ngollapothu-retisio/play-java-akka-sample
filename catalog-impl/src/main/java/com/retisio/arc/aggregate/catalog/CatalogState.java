@@ -18,7 +18,6 @@ public class CatalogState implements JsonSerializable {
     @JsonCreator
     public CatalogState(Optional<Catalog> catalog) {
         this.catalog = catalog;
-        log.info("CatalogState ....");
     }
 
     public CatalogState createCatalog(CatalogEvent.CatalogCreated event){
